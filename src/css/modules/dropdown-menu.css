@@ -27,3 +27,13 @@
 .vs__no-options {
     text-align: center;
 }
+
+.vs__dropdown-group-label {
+    line-height: 1.42857143;
+    display: block;
+    padding: var(--vs-dropdown-group-padding);
+    clear: both;
+    color: var(--vs-dropdown-group-color);
+    white-space: nowrap;
+    cursor: pointer;
+}

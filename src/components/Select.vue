@@ -96,27 +96,71 @@
         @mouseup="onMouseUp"
       >
         <slot name="list-header" v-bind="scope.listHeader" />
-        <li
-          v-for="(option, index) in filteredOptions"
-          :id="`vs${uid}__option-${index}`"
-          :key="getOptionKey(option)"
-          role="option"
-          class="vs__dropdown-option"
-          :class="{
-            'vs__dropdown-option--deselect':
-              isOptionDeselectable(option) && index === typeAheadPointer,
-            'vs__dropdown-option--selected': isOptionSelected(option),
-            'vs__dropdown-option--highlight': index === typeAheadPointer,
-            'vs__dropdown-option--disabled': !selectable(option),
-          }"
-          :aria-selected="index === typeAheadPointer ? true : null"
-          @mouseover="selectable(option) ? (typeAheadPointer = index) : null"
-          @click.prevent.stop="selectable(option) ? select(option) : null"
-        >
-          <slot name="option" v-bind="normalizeOptionForSlot(option)">
-            {{ getOptionLabel(option) }}
-          </slot>
-        </li>
+
+        <!-- GROUPED OPTIONS -->
+        <template v-if="grouped">
+          <template v-for="(group, gIndex) in filteredOptions" :key="gIndex">
+            <li class="vs__dropdown-group-label">
+              {{ getGroupLabel(group) }}
+            </li>
+
+            <li
+              v-for="(option, oIndex) in group.options"
+              :id="`vs${uid}__option-${gIndex}-${oIndex}`"
+              :key="getOptionKey(option)"
+              role="option"
+              class="vs__dropdown-option"
+              :class="{
+                'vs__dropdown-option--deselect':
+                  isOptionDeselectable(option) &&
+                  typeAheadPointer === `${gIndex}-${oIndex}`,
+                'vs__dropdown-option--selected': isOptionSelected(option),
+                'vs__dropdown-option--highlight':
+                  typeAheadPointer === `${gIndex}-${oIndex}`,
+                'vs__dropdown-option--disabled': !selectable(option),
+              }"
+              :aria-selected="
+                typeAheadPointer === `${gIndex}-${oIndex}` ? true : null
+              "
+              @mouseover="
+                selectable(option)
+                  ? (typeAheadPointer = `${gIndex}-${oIndex}`)
+                  : null
+              "
+              @click.prevent.stop="selectable(option) ? select(option) : null"
+            >
+              <slot name="option" v-bind="normalizeOptionForSlot(option)">
+                {{ getOptionLabel(option) }}
+              </slot>
+            </li>
+          </template>
+        </template>
+
+        <!-- FLAT OPTIONS (ORIGINAL BEHAVIOR) -->
+        <template v-else>
+          <li
+            v-for="(option, index) in filteredOptions"
+            :id="`vs${uid}__option-${index}`"
+            :key="getOptionKey(option)"
+            role="option"
+            class="vs__dropdown-option"
+            :class="{
+              'vs__dropdown-option--deselect':
+                isOptionDeselectable(option) && index === typeAheadPointer,
+              'vs__dropdown-option--selected': isOptionSelected(option),
+              'vs__dropdown-option--highlight': index === typeAheadPointer,
+              'vs__dropdown-option--disabled': !selectable(option),
+            }"
+            :aria-selected="index === typeAheadPointer ? true : null"
+            @mouseover="selectable(option) ? (typeAheadPointer = index) : null"
+            @click.prevent.stop="selectable(option) ? select(option) : null"
+          >
+            <slot name="option" v-bind="normalizeOptionForSlot(option)">
+              {{ getOptionLabel(option) }}
+            </slot>
+          </li>
+        </template>
+
         <li v-if="filteredOptions.length === 0" class="vs__no-options">
           <slot name="no-options" v-bind="scope.noOptions">
             Sorry, no matching options.
@@ -209,6 +253,31 @@ export default {
       type: Array,
       default() {
         return []
+      },
+    },
+
+    grouped: {
+      type: Boolean,
+      default: false,
+    },
+
+    groupLabel: {
+      type: String,
+      default: 'label',
+    },
+
+    getGroupLabel: {
+      type: Function,
+      default(group) {
+        if (typeof group === 'object') {
+          if (!group.hasOwnProperty(this.groupLabel)) {
+            return console.warn(
+              `[vue-select warn]: Group label key "group.${this.groupLabel}" does not exist.`
+            )
+          }
+          return group[this.groupLabel]
+        }
+        return group
       },
     },
 
@@ -496,11 +565,25 @@ export default {
     filter: {
       type: Function,
       default(options, search) {
+        if (this.grouped) {
+          return options
+            .map((group) => {
+              if (!group || !Array.isArray(group.options)) return null
+
+              const filtered = group.options.filter((option) => {
+                let label = this.getOptionLabel(option)
+                if (typeof label === 'number') label = label.toString()
+                return this.filterBy(option, label, search)
+              })
+
+              return filtered.length ? { ...group, options: filtered } : null
+            })
+            .filter(Boolean)
+        }
+
         return options.filter((option) => {
           let label = this.getOptionLabel(option)
-          if (typeof label === 'number') {
-            label = label.toString()
-          }
+          if (typeof label === 'number') label = label.toString()
           return this.filterBy(option, label, search)
         })
       },
@@ -888,7 +971,9 @@ export default {
      * @return {array}
      */
     filteredOptions() {
-      const optionList = [].concat(this.optionList)
+      const optionList = this.grouped
+        ? [].concat(this.options)
+        : [].concat(this.options)
 
       if (!this.filterable && !this.taggable) {
         return optionList
